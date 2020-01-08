@@ -1,0 +1,137 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oathkeeperrules
+  labels:
+    app: oathkeeper
+    stack: ory
+data:
+  rules.json: |
+   [
+   {
+     "id": "oathkeeper-access-rule",
+     "match": {
+       "url": "http://ambassador.local/oathkeeper/<.*>",
+       "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"]
+     },
+     "authenticators": [{ "handler": "anonymous" }],
+     "authorizer": { "handler": "allow" },
+     "mutators": [{ "handler" : "noop"}],
+   },
+   {
+     "id": "httpbin:denyall",
+     "match": {
+       "url": "http://ambassador.local/httpbin/<.*>",
+       "methods": ["GET"]
+     },
+     "authenticators": [{ "handler": "anonymous" }],
+     "authorizer": { "handler": "deny" },
+     "mutators": [{ "handler" : "noop"}],
+   },
+   {
+     "id": "hydra:public:allow",
+     "match": {
+       "url": "http://ambassador.local/hydra/public/<.*>",
+       "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+     },
+     "authenticators": [{ "handler": "anonymous" }],
+     "authorizer": { "handler": "allow" },
+     "mutators": [{ "handler" : "noop"}],
+   },
+   {
+     "id": "hydra:private:authenticated",
+     "match": {
+       "url": "http://ambassador.local/hydra/private/<.*>",
+       "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+     },
+     "authenticators": [{ 
+                "handler": "oauth2_introspection",
+                "config" : {
+                    "required_scope"  : ["hydra.private.all"],
+                    "trusted_issuers" : ["http://ambassador.local/hydra/public/"],
+                    "target_audience" : ["http://ory-hydra:4444/oauth2/introspect"]    
+                }
+                }],
+     "authorizer": { "handler": "allow" },
+     "mutators": [{ "handler" : "noop"}],
+   },
+   ]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oathkeeperconfig
+  labels:
+    app: oathkeeper
+    stack: ory
+data:
+  config.yaml: |
+   serve:
+     api:
+       port: 4456 # run the api at port 4456
+   log:
+     level: debug
+   access_rules:
+     repositories:
+       - file:///rules.json
+   mutators:
+     noop:
+       enabled: true
+   authorizers:
+     allow:
+       enabled: true
+     deny:
+       enabled: true
+   authenticators:
+     anonymous:
+       enabled: true
+     oauth2_introspection:
+       enabled: true
+       introspection_url: http://ory-hydra:4445/oauth2/introspect
+       scope_strategy: exact
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ory-oathkeeper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ory-oathkeeper
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: ory-oathkeeper
+    spec:
+      volumes:
+      - name: rules
+        configMap:
+          name: oathkeeperrules
+      - name: config
+        configMap:
+          name: oathkeeperconfig
+      containers:
+      - name: ory-oathkeeper
+        image: oryd/oathkeeper:v0.18.0 
+        imagePullPolicy: Always
+        command: ["oathkeeper","--config","/config.yaml","serve","api"]
+        volumeMounts:
+        - name: rules
+          mountPath: /rules.json
+          subPath: rules.json
+        - name: config
+          mountPath: /config.yaml
+          subPath: config.yaml
+        env:
+        - name: PORT
+          value: "4456"
+        ports:
+        - name: http-api
+          containerPort: 4456
+        resources:
+          limits:
+            cpu: "0.1"
+            memory: 100Mi

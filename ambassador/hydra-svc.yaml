@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ory-hydra
+  annotations:
+    getambassador.io/config: |
+      ---
+      apiVersion: ambassador/v1
+      kind:  Mapping
+      name:  ory-hydra-public_mapping
+      prefix: /hydra/public/
+      service: ory-hydra:4444
+      ---
+      apiVersion: ambassador/v1
+      kind:  Mapping
+      name:  ory-hydra-private_mapping
+      prefix: /hydra/private/
+      service: ory-hydra:4445
+spec:
+  ports:
+    - name: http-ory-hydra-public
+      port: 4444
+      targetPort: public-api
+    - name: http-ory-hydra-private
+      port: 4445
+      targetPort: private-api
+  selector:
+    app: ory-hydra
+  type: ClusterIP

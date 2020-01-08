@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hydraconfig
+  labels:
+    app: hydra
+    stack: ory
+data:
+  config.yaml: |
+   serve:
+     public:
+       port: 4444
+   admin:
+     port: 4445
+   urls:
+     self:
+       issuer: http://hydra.local:4444/
+   log:
+     level: debug
+   dsn: memory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ory-hydra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ory-hydra
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: ory-hydra
+    spec:
+      volumes:
+      - name: config
+        configMap:
+          name: hydraconfig
+      containers:
+      - name: ory-hydra
+        image: oryd/hydra:v1.0
+        imagePullPolicy: Always
+        command: ["hydra","--config","/config.yaml","serve","all","--dangerous-force-http"]
+        volumeMounts:
+        - name: config
+          mountPath: /config.yaml
+          subPath: config.yaml
+        ports:
+        - name: public-api
+          containerPort: 4444
+        - name: private-api
+          containerPort: 4445
+        resources:
+          limits:
+            cpu: "0.1"
+            memory: 100Mi
